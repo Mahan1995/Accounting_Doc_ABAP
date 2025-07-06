@@ -1,0 +1,149 @@
+*&---------------------------------------------------------------------*
+*& Report  Z_FI_FORM_PROGRAM
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+
+
+
+
+
+
+REPORT z_fi_form_program.
+
+
+*fields
+PARAMETERS: p_belnr TYPE bkpf-belnr,
+            p_gjahr TYPE bkpf-gjahr,
+            p_bukrs TYPE bkpf-bukrs.
+
+
+SELECTION-SCREEN SKIP 1.
+
+
+*buttons
+SELECTION-SCREEN BEGIN OF LINE.
+SELECTION-SCREEN POSITION 2.
+SELECTION-SCREEN PUSHBUTTON (15) btn_srch USER-COMMAND search.
+SELECTION-SCREEN POSITION 20.
+SELECTION-SCREEN PUSHBUTTON (15) btn_alv USER-COMMAND alv_show.
+SELECTION-SCREEN END OF LINE.
+
+
+
+INITIALIZATION.
+  btn_srch = 'Search Doc'.
+  btn_alv  = 'ALV Export'.
+
+
+
+AT SELECTION-SCREEN.
+  CASE sy-ucomm.
+    WHEN 'SEARCH'.
+      SUBMIT z_fi_form_program WITH p_belnr = p_belnr
+                                WITH p_gjahr = p_gjahr
+                                WITH p_bukrs = p_bukrs
+                                AND RETURN.
+
+*PERFORM get_line_items.
+
+    WHEN 'ALV_SHOW'.
+      PERFORM alv_show.
+  ENDCASE.
+
+
+
+
+
+START-OF-SELECTION.
+
+  DATA: wa_bkpf TYPE bkpf.
+  data: lt_bseg type TABLE OF bseg.
+  data: wa_bseg TYPE bseg.
+
+  " Fetch BKPF Header
+  SELECT SINGLE * INTO wa_bkpf FROM bkpf
+    WHERE belnr = p_belnr
+      AND gjahr = p_gjahr
+      AND bukrs = p_bukrs.
+
+  IF sy-subrc <> 0.
+    MESSAGE 'Document Not Found' TYPE 'I'.
+    EXIT.
+  ENDIF.
+
+  " Display Header
+  SKIP.
+  WRITE: / '# Document Header Info (from BKPF)'.
+  ULINE.
+  WRITE: / 'Document No:',      wa_bkpf-belnr,
+         / 'Company Code:',     wa_bkpf-bukrs,
+         / 'Fiscal Year:',      wa_bkpf-gjahr,
+         / 'Document Type:',    wa_bkpf-blart,
+         / 'Posting Date:',     wa_bkpf-budat,
+         / 'Document Date:',    wa_bkpf-bldat,
+         / 'Created By:',       wa_bkpf-usnam,
+         / 'Transaction Code:', wa_bkpf-tcode.
+  ULINE.
+
+perform get_line_items.
+
+
+FORM get_line_items.
+
+  DATA: wa_bseg TYPE bseg,
+        lt_bseg TYPE TABLE OF bseg.
+
+  " Fetch BSEG Line Items
+  SELECT * INTO TABLE lt_bseg FROM bseg
+    WHERE belnr = p_belnr
+      AND gjahr = p_gjahr
+      AND bukrs = p_bukrs.
+
+  SKIP.
+  WRITE: / '# Line Items (from BSEG)'.
+  ULINE.
+  WRITE: / 'Line', 7 'Account', 20 'Debit/Credit', 40 'Amount',
+           55 'Customer', 65 'Vendor', 75 'Text'.
+
+
+  WRITE: / sy-uline(100).
+
+  LOOP AT lt_bseg INTO wa_bseg.
+    DATA: lv_dc TYPE string.
+
+    IF wa_bseg-shkzg = 'S'.
+      lv_dc = 'Debit (S)'.
+    ELSEIF wa_bseg-shkzg = 'H'.
+      lv_dc = 'Credit (H)'.
+    ELSE.
+      lv_dc = 'Unknown'.
+    ENDIF.
+
+     WRITE: / wa_bseg-buzei, 7 wa_bseg-hkont, 20 lv_dc,
+           40 wa_bseg-wrbtr, 55 wa_bseg-kunnr,
+           65 wa_bseg-lifnr, 75 wa_bseg-sgtxt.
+
+  ENDLOOP.
+  ULINE.
+ENDFORM.
+
+
+
+FORM alv_show.
+  DATA: lt_bseg TYPE TABLE OF bseg.
+
+  " Fetch BSEG again for ALV export
+  SELECT * INTO TABLE lt_bseg FROM bseg
+    WHERE belnr = p_belnr
+      AND gjahr = p_gjahr
+      AND bukrs = p_bukrs.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_structure_name = 'BSEG'
+    TABLES
+      t_outtab         = lt_bseg.
+ENDFORM.
